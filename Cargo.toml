@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "bar",
+    "modules/time",
+]
+
