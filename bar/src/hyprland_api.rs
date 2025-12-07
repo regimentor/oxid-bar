@@ -73,8 +73,16 @@ impl HyprWorkspaces {
 
         let clients = Clients::get()?;
         for client in clients.iter() {
-            let icons = icon_fetcher(&client.class)?;
             let desktop_file = DesktopFile::load(&client.class)?;
+            let icons = if let Some(df) = &desktop_file {
+                if let Some(icon_name) = &df.icon {
+                    icon_fetcher(icon_name)?
+                } else {
+                    icon_fetcher(&client.class)?
+                }
+            } else {
+                icon_fetcher(&client.class)?
+            };
             let hypr_client = HyprlandClient {
                 class: client.class.clone(),
                 title: client.title.clone(),

@@ -96,9 +96,9 @@ fn main() {
     for (id, ws) in hyprland_api_workspaces.map.iter() {
         println!("Workspace {}: {}", id, ws);
         for client in ws.clients.iter() {
-            println!("    Client: {}", client);
+            println!("-Client: {}", client);
             println!(
-                "        Desktop File: {}",
+                "--Desktop File: {}",
                 if let Some(df) = &client.desktop_file {
                     format!("{}", df)
                 } else {
@@ -106,7 +106,7 @@ fn main() {
                 }
             );
             for icon in client.icons.iter() {
-                println!("        Icon path: {}", icon);
+                println!("---Icon path: {}", icon);
             }
         }
     }
