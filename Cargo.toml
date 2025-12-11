@@ -1,6 +1,6 @@
 [workspace]
+resolver = "3"
 members = [
-    "bar",
+    "bar", "modules/hyprland_workspaces",
     "modules/time",
 ]
-
