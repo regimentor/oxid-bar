@@ -1,5 +1,6 @@
 use helpers::icon_fetcher;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use zbus::proxy;
 use zvariant::{OwnedObjectPath, OwnedValue, Type, Value};
 
@@ -98,8 +99,16 @@ pub trait StatusNotifierItem {
     fn window_id(&self) -> zbus::Result<u32>;
     #[zbus(property)]
     fn tool_tip(&self) -> zbus::Result<ToolTip>;
+}
 
-
+#[proxy(interface = "com.canonical.dbusmenu")]
+pub trait DBusMenu {
+    fn get_layout(
+        &self,
+        parent_id: i32,
+        recursion_depth: i32,
+        property_names: Vec<&str>,
+    ) -> zbus::Result<GetLayoutResult>;
 }
 
 #[derive(Debug, Clone)]
@@ -143,6 +152,13 @@ pub struct TrayItem {
     pub object_path: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct MenuNode {
+    pub id: i32,
+    pub props: HashMap<String, OwnedValue>,
+    pub children: Vec<MenuNode>,
+}
+
 pub struct Tray {
     connection: zbus::Connection,
 }
@@ -171,7 +187,7 @@ impl Tray {
             let item_proxy = match self.create_item_proxy(bus_name, object_path.clone()).await {
                 Ok(proxy) => proxy,
                 Err(e) => {
-                    eprintln!("Ошибка создания прокси для {raw_item}: {e}");
+                    eprintln!("Error creating proxy for {raw_item}: {e}");
                     continue;
                 }
             };
@@ -179,7 +195,7 @@ impl Tray {
             let item = match Self::fetch_item_data(&item_proxy, bus_name, object_path.clone()).await {
                 Ok(item) => item,
                 Err(e) => {
-                    eprintln!("Ошибка получения данных элемента {raw_item}: {e}");
+                    eprintln!("Error fetching item data for {raw_item}: {e}");
                     continue;
                 }
             };
@@ -256,4 +272,94 @@ impl Tray {
             object_path,
         })
     }
+
+    pub async fn get_item_menu(
+        &self,
+        item: &TrayItem,
+    ) -> zbus::Result<Option<MenuNode>> {
+        // 1) Проверить menu_path
+        let menu_path = match &item.menu_path {
+            Some(path) => {
+                let path_str = path.as_str();
+                if path_str == "/" || path_str.is_empty() {
+                    return Ok(None);
+                }
+                path_str
+            }
+            None => return Ok(None),
+        };
+
+        // 2) Создать DBusMenuProxy
+        let menu_proxy = match DBusMenuProxy::builder(&self.connection)
+            .destination(item.bus_name.as_str())?
+            .path(menu_path)?
+            .build()
+            .await
+        {
+            Ok(proxy) => proxy,
+            Err(e) => {
+                eprintln!("Error creating DBusMenu proxy for {}: {}", item.id, e);
+                return Ok(None);
+            }
+        };
+
+        // 3) Вызвать GetLayout(0, -1, [])
+        let (_revision, layout_tuple) = match menu_proxy.get_layout(0, -1, vec![]).await {
+            Ok(result) => result,
+            Err(e) => {
+                eprintln!("Error calling GetLayout for {}: {}", item.id, e);
+                return Ok(None);
+            }
+        };
+
+        // 4) Распарсить layout через parse_layout_tuple
+        match parse_layout_tuple(layout_tuple) {
+            Ok(node) => Ok(Some(node)),
+            Err(e) => {
+                eprintln!("Error parsing layout tuple for {}: {}", item.id, e);
+                Ok(None)
+            }
+        }
+    }
+}
+
+// Helper types для парсинга layout
+// PropsDict должен быть HashMap для правильной десериализации a{sv} (словарь)
+type PropsDict = HashMap<String, OwnedValue>;
+// layout node: (i32, a{sv}, a(layout))
+type LayoutTuple = (i32, PropsDict, Vec<OwnedValue>);
+
+// Тип для возвращаемого значения GetLayout: (revision: u32, layout: layout_node)
+type GetLayoutResult = (u32, LayoutTuple);
+
+fn parse_layout_tuple(tuple: LayoutTuple) -> Result<MenuNode, zvariant::Error> {
+    let (id, props, children_array) = tuple;
+
+    // Рекурсивно разобрать детей
+    let mut children = Vec::new();
+    for child_value in children_array {
+        // Преобразуем OwnedValue в LayoutTuple для рекурсивного парсинга
+        let value: Value = Value::from(child_value);
+        match <Value as TryInto<LayoutTuple>>::try_into(value) {
+            Ok(child_tuple) => {
+                match parse_layout_tuple(child_tuple) {
+                    Ok(child_node) => children.push(child_node),
+                    Err(e) => {
+                        eprintln!("Error parsing child node: {}", e);
+                        // Продолжаем парсинг остальных детей, не паникуем
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Error converting child value to LayoutTuple: {}", e);
+                // Продолжаем парсинг остальных детей, не паникуем
+            }
+        }
+    }
+
+    Ok(MenuNode {
+        id,
+        props,
+        children,
+    })
 }

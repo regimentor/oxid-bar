@@ -101,7 +101,7 @@ fn build_ui(app: &Application) {
                 start_tray_updater(tray_box_clone, tray_rc);
             }
             Err(e) => {
-                eprintln!("Ошибка инициализации трея: {e}");
+                eprintln!("Tray initialization error: {e}");
             }
         }
     });
@@ -180,12 +180,12 @@ fn refresh_hypr_content(container: &Box) {
             }
         }
         Ok(_) => {
-            let placeholder = Label::new(Some("Hyprland: нет активных рабочих столов"));
+            let placeholder = Label::new(Some("Hyprland: no active workspaces"));
             placeholder.set_opacity(0.8);
             container.append(&placeholder);
         }
         Err(err) => {
-            let error_label = Label::new(Some(&format!("Hyprland: ошибка запроса ({err})")));
+            let error_label = Label::new(Some(&format!("Hyprland: request error ({err})")));
             error_label.set_opacity(0.8);
             container.append(&error_label);
         }
@@ -289,7 +289,7 @@ fn add_click_switch(widget: &Box, workspace_id: i32) {
         if let Err(err) = Dispatch::call(DispatchType::Workspace(
             WorkspaceIdentifierWithSpecial::Id(workspace_id),
         )) {
-            eprintln!("Не удалось перейти на рабочий стол {workspace_id}: {err}");
+            eprintln!("Failed to switch to workspace {workspace_id}: {err}");
         }
     });
     widget.add_controller(click);
@@ -320,7 +320,7 @@ fn update_lang(label: &Label) {
         }
         Err(e) => {
             label.set_text("—");
-            eprintln!("Ошибка получения раскладки: {}", e);
+            eprintln!("Error getting keyboard layout: {}", e);
         }
     }
 }
@@ -443,7 +443,7 @@ fn start_tray_updater(tray_box: Box, tray: Rc<RefCell<Tray>>) {
                 let items = match tray_ref.borrow().get_items().await {
                 Ok(items) => items,
                 Err(e) => {
-                    eprintln!("Ошибка получения элементов трея: {e}");
+                    eprintln!("Error getting tray items: {e}");
                     return;
                 }
             };

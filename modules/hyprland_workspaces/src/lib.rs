@@ -106,7 +106,7 @@ impl HyprWorkspaces {
 
         let active_id = ActiveWorkspace::get_active()
             .map(|ws| ws.id)
-            .map_err(|e| println!("Не удалось получить активный рабочий стол: {e}"))
+            .map_err(|e| println!("Failed to get active workspace: {e}"))
             .ok();
 
         Ok((hypr_ws, active_id))
