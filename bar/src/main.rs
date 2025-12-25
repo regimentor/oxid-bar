@@ -2,18 +2,20 @@ use gtk4::{
     Align, Application, ApplicationWindow, Box, CssProvider, EventControllerMotion, GestureClick,
     Image, Label, Orientation, PropagationPhase, StyleContext,
     gdk::{Display, Monitor},
-    glib::{self},
+    glib::{self, MainContext},
     prelude::*,
 };
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
+use gdk_pixbuf::Pixbuf;
 use hyprland::{
     dispatch::{Dispatch, DispatchType, WorkspaceIdentifierWithSpecial},
     event_listener::EventListener,
 };
 use hyprland_workspaces::HyprWorkspaces;
 use lang::get_layout_flag;
-use std::{sync::mpsc, thread, time::Duration};
+use std::{rc::Rc, cell::RefCell, sync::mpsc, thread, time::Duration};
 use time_utils::format_local_default;
+use tray::Tray;
 
 fn main() {
     let app = Application::builder()
@@ -64,6 +66,12 @@ fn build_ui(app: &Application) {
     spacer.set_hexpand(true);
     root.append(&spacer);
 
+    let tray_box = Box::new(Orientation::Horizontal, 6);
+    tray_box.add_css_class("tray");
+    tray_box.set_halign(Align::End);
+    tray_box.set_margin_end(12);
+    root.append(&tray_box);
+
     let lang_label = Label::new(None);
     lang_label.add_css_class("lang");
     lang_label.set_halign(Align::End);
@@ -84,6 +92,19 @@ fn build_ui(app: &Application) {
 
     let (tx, rx) = mpsc::channel();
     start_hypr_event_listener(tx);
+
+    let tray_box_clone = tray_box.clone();
+    MainContext::default().spawn_local(async move {
+        match Tray::new().await {
+            Ok(tray) => {
+                let tray_rc = Rc::new(RefCell::new(tray));
+                start_tray_updater(tray_box_clone, tray_rc);
+            }
+            Err(e) => {
+                eprintln!("Ошибка инициализации трея: {e}");
+            }
+        }
+    });
 
     let workspaces_clone = workspaces_box.clone();
     let lang_clone = lang_label.clone();
@@ -221,6 +242,24 @@ window {
     font-weight: 600;
     letter-spacing: 0.3px;
 }
+
+.tray {
+    color: #e5e7eb;
+}
+
+.tray-item-letter {
+    color: #e5e7eb;
+    font-weight: 600;
+    font-size: 14px;
+    min-width: 20px;
+    min-height: 20px;
+    border-radius: 4px;
+    background-color: rgba(255, 255, 255, 0.1);
+    padding: 2px 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 "#;
 
 fn load_css() {
@@ -304,6 +343,115 @@ fn set_full_width(window: &ApplicationWindow) {
     }
     window.set_hexpand(true);
     window.set_halign(Align::Fill);
+}
+
+fn refresh_tray_content(container: &Box, items: &[tray::TrayItem]) {
+    clear_children(container);
+
+    for item in items {
+        let mut icon_widget: Option<gtk4::Widget> = None;
+
+        // Приоритет 1: иконка из icon_paths
+        if let Some(icon_path) = item.icon.icon_paths.first()
+            .filter(|p| std::path::Path::new(p).exists())
+        {
+            let image = Image::from_file(icon_path);
+            image.set_pixel_size(20);
+            image.set_margin_end(4);
+            let tooltip = if !item.title.is_empty() {
+                item.title.clone()
+            } else if !item.tooltip.title().is_empty() {
+                item.tooltip.title().to_string()
+            } else {
+                item.id.clone()
+            };
+            image.set_tooltip_text(Some(&tooltip));
+            icon_widget = Some(image.upcast());
+        }
+
+        // Приоритет 2: pixmap данные
+        if icon_widget.is_none() 
+            && let Some((width, height, data)) = &item.icon.pixmap
+        {
+            let bytes = glib::Bytes::from(&data[..]);
+            let pixbuf = Pixbuf::from_bytes(&bytes, gdk_pixbuf::Colorspace::Rgb, false, 8, *width, *height, width * 4);
+            let image = Image::from_pixbuf(Some(&pixbuf));
+            image.set_pixel_size(20);
+            image.set_margin_end(4);
+            let tooltip = if !item.title.is_empty() {
+                item.title.clone()
+            } else if !item.tooltip.title().is_empty() {
+                item.tooltip.title().to_string()
+            } else {
+                item.id.clone()
+            };
+            image.set_tooltip_text(Some(&tooltip));
+            icon_widget = Some(image.upcast());
+        }
+
+        // Приоритет 3: fallback на первую букву
+        if icon_widget.is_none() {
+            let letter = if !item.title.is_empty() {
+                item.title
+                    .chars()
+                    .next()
+                    .map(|c| c.to_uppercase().collect::<String>())
+                    .unwrap_or_default()
+            } else if !item.tooltip.title().is_empty() {
+                item.tooltip.title().chars()
+                    .next()
+                    .map(|c| c.to_uppercase().collect::<String>())
+                    .unwrap_or_default()
+            } else {
+                item.id
+                    .chars()
+                    .next()
+                    .map(|c| c.to_uppercase().collect::<String>())
+                    .unwrap_or_default()
+            };
+
+            let label = Label::new(Some(&letter));
+            label.add_css_class("tray-item-letter");
+            label.set_margin_end(4);
+            let tooltip = if !item.title.is_empty() {
+                item.title.clone()
+            } else if !item.tooltip.title().is_empty() {
+                item.tooltip.title().to_string()
+            } else {
+                item.id.clone()
+            };
+            label.set_tooltip_text(Some(&tooltip));
+            icon_widget = Some(label.upcast());
+        }
+
+        if let Some(widget) = icon_widget {
+            container.append(&widget);
+        }
+    }
+}
+
+
+fn start_tray_updater(tray_box: Box, tray: Rc<RefCell<Tray>>) {
+    let tray_box_clone = tray_box.clone();
+    let tray_clone = tray.clone();
+    glib::timeout_add_local(Duration::from_secs(1), move || {
+        let tray_box_ref = tray_box_clone.clone();
+        let tray_ref = tray_clone.clone();
+        MainContext::default().spawn_local({
+            #[allow(clippy::await_holding_refcell_ref)]
+            async move {
+                let items = match tray_ref.borrow().get_items().await {
+                Ok(items) => items,
+                Err(e) => {
+                    eprintln!("Ошибка получения элементов трея: {e}");
+                    return;
+                }
+            };
+                refresh_tray_content(&tray_box_ref, &items);
+            }
+        });
+        glib::ControlFlow::Continue
+    });
 }
 
 fn start_hypr_event_listener(tx: mpsc::Sender<()>) {

@@ -3,5 +3,6 @@ resolver = "3"
 members = [
     "bar", "modules/hyprland_workspaces",
     "modules/time",
-    "modules/lang",
+    "modules/lang", "modules/tray",
+    "modules/helpers",
 ]
