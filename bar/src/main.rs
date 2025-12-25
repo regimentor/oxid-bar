@@ -11,6 +11,7 @@ use hyprland::{
     event_listener::EventListener,
 };
 use hyprland_workspaces::HyprWorkspaces;
+use lang::get_layout_flag;
 use std::{sync::mpsc, thread, time::Duration};
 use time_utils::format_local_default;
 
@@ -63,6 +64,12 @@ fn build_ui(app: &Application) {
     spacer.set_hexpand(true);
     root.append(&spacer);
 
+    let lang_label = Label::new(None);
+    lang_label.add_css_class("lang");
+    lang_label.set_halign(Align::End);
+    lang_label.set_margin_end(12);
+    root.append(&lang_label);
+
     let clock_label = Label::new(None);
     clock_label.add_css_class("clock");
     clock_label.set_halign(Align::End);
@@ -72,12 +79,14 @@ fn build_ui(app: &Application) {
     window.present();
 
     refresh_hypr_content(&workspaces_box);
+    update_lang(&lang_label);
     update_clock(&clock_label);
 
     let (tx, rx) = mpsc::channel();
     start_hypr_event_listener(tx);
 
     let workspaces_clone = workspaces_box.clone();
+    let lang_clone = lang_label.clone();
     let clock_clone = clock_label.clone();
     glib::timeout_add_local(Duration::from_millis(100), move || {
         let mut refreshed = false;
@@ -87,6 +96,7 @@ fn build_ui(app: &Application) {
         if refreshed {
             refresh_hypr_content(&workspaces_clone);
         }
+        update_lang(&lang_clone);
         update_clock(&clock_clone);
         glib::ControlFlow::Continue
     });
@@ -200,6 +210,12 @@ window {
     margin-right: 4px;
 }
 
+.lang {
+    color: #e5e7eb;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
 .clock {
     color: #e5e7eb;
     font-weight: 600;
@@ -256,6 +272,18 @@ fn add_hover(widget: &Box) {
         }
     });
     widget.add_controller(motion);
+}
+
+fn update_lang(label: &Label) {
+    match get_layout_flag() {
+        Ok(flag) => {
+            label.set_text(&flag);
+        }
+        Err(e) => {
+            label.set_text("—");
+            eprintln!("Ошибка получения раскладки: {}", e);
+        }
+    }
 }
 
 fn update_clock(label: &Label) {

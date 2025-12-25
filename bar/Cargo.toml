@@ -10,4 +10,5 @@ gtk4-layer-shell = "0.7.1"
 gtk4-layer-shell-sys = "0.5.2"
 hyprland = "=0.4.0-beta.3"
 hyprland_workspaces = { path = "../modules/hyprland_workspaces" }
+lang = { path = "../modules/lang" }
 time-utils = { package = "time", path = "../modules/time" }
