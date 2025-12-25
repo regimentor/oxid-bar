@@ -4,5 +4,5 @@ members = [
     "bar", "modules/hyprland_workspaces",
     "modules/time",
     "modules/lang", "modules/tray",
-    "modules/helpers",
+    "modules/helpers", "modules/logger",
 ]

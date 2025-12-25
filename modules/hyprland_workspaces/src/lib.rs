@@ -106,7 +106,9 @@ impl HyprWorkspaces {
 
         let active_id = ActiveWorkspace::get_active()
             .map(|ws| ws.id)
-            .map_err(|e| println!("Failed to get active workspace: {e}"))
+            .map_err(|e| {
+                logger::log_warning("HyprWorkspaces::get_workspaces", format!("Failed to get active workspace: {e}"));
+            })
             .ok();
 
         Ok((hypr_ws, active_id))
@@ -141,10 +143,10 @@ impl DesktopFile {
         }
 
         let Some(file_path) = Self::find(app_class_name) else {
-            println!("Desktop file for '{}' not found", app_class_name);
+            logger::log_info("DesktopFile::load", format!("Desktop file for '{}' not found", app_class_name));
             return Ok(None);
         };
-        println!("Loading desktop file from: {}", file_path);
+        logger::log_info("DesktopFile::load", format!("Loading desktop file from: {}", file_path));
         let content = Ini::load_from_file(&file_path)?;
         let name = content
             .get_from(Some("Desktop Entry"), "Name")

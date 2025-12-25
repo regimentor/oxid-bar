@@ -187,7 +187,7 @@ impl Tray {
             let item_proxy = match self.create_item_proxy(bus_name, object_path.clone()).await {
                 Ok(proxy) => proxy,
                 Err(e) => {
-                    eprintln!("Error creating proxy for {raw_item}: {e}");
+                    logger::log_error("Tray::create_proxy", format!("{raw_item}: {e}"));
                     continue;
                 }
             };
@@ -195,7 +195,7 @@ impl Tray {
             let item = match Self::fetch_item_data(&item_proxy, bus_name, object_path.clone()).await {
                 Ok(item) => item,
                 Err(e) => {
-                    eprintln!("Error fetching item data for {raw_item}: {e}");
+                    logger::log_error("Tray::fetch_item_data", format!("{raw_item}: {e}"));
                     continue;
                 }
             };
@@ -298,7 +298,7 @@ impl Tray {
         {
             Ok(proxy) => proxy,
             Err(e) => {
-                eprintln!("Error creating DBusMenu proxy for {}: {}", item.id, e);
+                logger::log_error("Tray::get_item_menu::create_proxy", format!("{}: {}", item.id, e));
                 return Ok(None);
             }
         };
@@ -307,7 +307,7 @@ impl Tray {
         let (_revision, layout_tuple) = match menu_proxy.get_layout(0, -1, vec![]).await {
             Ok(result) => result,
             Err(e) => {
-                eprintln!("Error calling GetLayout for {}: {}", item.id, e);
+                logger::log_error("Tray::get_item_menu::get_layout", format!("{}: {}", item.id, e));
                 return Ok(None);
             }
         };
@@ -316,7 +316,7 @@ impl Tray {
         match parse_layout_tuple(layout_tuple) {
             Ok(node) => Ok(Some(node)),
             Err(e) => {
-                eprintln!("Error parsing layout tuple for {}: {}", item.id, e);
+                logger::log_error("Tray::get_item_menu::parse_layout", format!("{}: {}", item.id, e));
                 Ok(None)
             }
         }
@@ -345,13 +345,13 @@ fn parse_layout_tuple(tuple: LayoutTuple) -> Result<MenuNode, zvariant::Error> {
                 match parse_layout_tuple(child_tuple) {
                     Ok(child_node) => children.push(child_node),
                     Err(e) => {
-                        eprintln!("Error parsing child node: {}", e);
+                        logger::log_error("Tray::parse_layout_tuple::child", e);
                         // Продолжаем парсинг остальных детей, не паникуем
                     }
                 }
             }
             Err(e) => {
-                eprintln!("Error converting child value to LayoutTuple: {}", e);
+                logger::log_error("Tray::parse_layout_tuple::convert", e);
                 // Продолжаем парсинг остальных детей, не паникуем
             }
         }
