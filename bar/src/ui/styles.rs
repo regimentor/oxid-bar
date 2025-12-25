@@ -66,30 +66,88 @@ window {
     border-radius: 4px;
     background-color: rgba(255, 255, 255, 0.1);
     padding: 2px 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
 popover.tray-menu {
-    background-color: rgba(17, 24, 39, 0.95);
+    background-color: rgba(17, 24, 39, 0.8);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 8px;
     padding: 4px;
 }
 
+popover.tray-menu contents {
+    background-color: rgba(17, 24, 39, 0.8);
+}
+
+popover.tray-menu > box {
+    background-color: rgba(17, 24, 39, 0.8);
+}
+
 popover.tray-menu menu {
-    background-color: transparent;
+    background-color: rgba(17, 24, 39, 0.8);
     color: #e5e7eb;
+}
+
+popover.tray-menu list {
+    background-color: rgba(17, 24, 39, 0.8);
+}
+
+popover.tray-menu listview {
+    background-color: rgba(17, 24, 39, 0.8);
 }
 
 popover.tray-menu menuitem {
     padding: 6px 12px;
     border-radius: 4px;
+    color: #e5e7eb;
+    background-color: transparent;
 }
 
 popover.tray-menu menuitem:hover {
     background-color: rgba(255, 255, 255, 0.1);
+}
+
+popover.tray-menu menuitem label {
+    color: #e5e7eb;
+}
+
+popover.tray-menu .tray-menu-content {
+    background-color: rgba(17, 24, 39, 0.8);
+}
+
+popover.tray-menu menuitem {
+    padding: 6px 12px;
+}
+
+popover.tray-menu menuitem[action^="separator"] {
+    padding: 0px;
+    margin: 4px 8px;
+    min-height: 1px;
+    max-height: 1px;
+    background-color: rgba(255, 255, 255, 0.2);
+    border: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+popover.tray-menu menuitem[action^="separator"]:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    border-top: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+popover.tray-menu menuitem[action^="separator"] > box {
+    min-height: 1px;
+    max-height: 1px;
+    padding: 0px;
+    margin: 0px;
+}
+
+popover.tray-menu menuitem[action^="separator"] label {
+    opacity: 0;
+    min-height: 0px;
+    max-height: 0px;
+    padding: 0px;
+    margin: 0px;
+    font-size: 0px;
 }
 "#;
 
@@ -98,20 +156,20 @@ pub fn load_css() {
     let provider = CssProvider::new();
     
     // Пытаемся загрузить из файла
-    let css_path = Path::new("resources/styles.css");
+    let css_path = Path::new("bar/resources/styles.css");
     let css_content = if css_path.exists() {
         match fs::read_to_string(css_path) {
             Ok(content) => {
-                eprintln!("Loaded CSS from file: {}", css_path.display());
+                logger::log_info("Loaded CSS from file", css_path.display());
                 content
             }
             Err(e) => {
-                eprintln!("Failed to read CSS file: {}. Using default CSS.", e);
+                logger::log_error("Failed to read CSS file", e);
                 DEFAULT_CSS.to_string()
             }
         }
     } else {
-        // Используем встроенные стили
+        logger::log_error("Failed to read CSS file", "File not found");
         DEFAULT_CSS.to_string()
     };
     

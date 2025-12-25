@@ -1,7 +1,7 @@
 use helpers::icon_fetcher;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use zbus::proxy;
+use zbus::{proxy, Error as ZbusError};
 use zvariant::{OwnedObjectPath, OwnedValue, Type, Value};
 
 #[proxy(
@@ -92,6 +92,13 @@ pub trait StatusNotifierItem {
     fn overlay_icon_name(&self) -> zbus::Result<String>;
 
     #[zbus(property)]
+    fn icon_pixmap(&self) -> zbus::Result<IconPixmap>;
+    #[zbus(property)]
+    fn attention_icon_pixmap(&self) -> zbus::Result<IconPixmap>;
+    #[zbus(property)]
+    fn overlay_icon_pixmap(&self) -> zbus::Result<IconPixmap>;
+
+    #[zbus(property)]
     fn menu(&self) -> zbus::Result<OwnedObjectPath>;
     #[zbus(property)]
     fn item_is_menu(&self) -> zbus::Result<bool>;
@@ -109,6 +116,25 @@ pub trait DBusMenu {
         recursion_depth: i32,
         property_names: Vec<&str>,
     ) -> zbus::Result<GetLayoutResult>;
+    
+    fn get_property(
+        &self,
+        id: i32,
+        name: &str,
+    ) -> zbus::Result<OwnedValue>;
+    
+    fn event(
+        &self,
+        id: i32,
+        event_id: &str,
+        data: OwnedValue,
+        timestamp: u32,
+    ) -> zbus::Result<()>;
+    
+    fn about_to_show(
+        &self,
+        id: i32,
+    ) -> zbus::Result<bool>;
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +196,11 @@ impl Tray {
             connection,
         })
     }
+    
+    /// Получить ссылку на DBus соединение
+    pub fn connection(&self) -> &zbus::Connection {
+        &self.connection
+    }
 
     pub async fn get_items(&self) -> zbus::Result<Vec<TrayItem>> {
         let watcher = StatusNotifierWatcherProxy::new(&self.connection).await?;
@@ -178,13 +209,13 @@ impl Tray {
         let mut items = Vec::new();
 
         for raw_item in registered_items {
-            // BUS_NAME/OBJECT_PATH
+            // BUS_NAME/OBJECT_PATH или только BUS_NAME
             let (bus_name, object_path) = match raw_item.split_once('/') {
-                Some((bus, path)) => (bus, format!("/{path}")),
-                None => continue,
+                Some((bus, path)) => (bus.to_string(), format!("/{path}")),
+                None => (raw_item.clone(), "/StatusNotifierItem".to_string()),
             };
 
-            let item_proxy = match self.create_item_proxy(bus_name, object_path.clone()).await {
+            let item_proxy = match self.create_item_proxy(bus_name.clone(), object_path.clone()).await {
                 Ok(proxy) => proxy,
                 Err(e) => {
                     logger::log_error("Tray::create_proxy", format!("{raw_item}: {e}"));
@@ -192,7 +223,7 @@ impl Tray {
                 }
             };
 
-            let item = match Self::fetch_item_data(&item_proxy, bus_name, object_path.clone()).await {
+            let item = match Self::fetch_item_data(&item_proxy, bus_name.clone(), object_path.clone()).await {
                 Ok(item) => item,
                 Err(e) => {
                     logger::log_error("Tray::fetch_item_data", format!("{raw_item}: {e}"));
@@ -207,52 +238,136 @@ impl Tray {
     }
 
 
-    async fn create_item_proxy<'a>(
+    async fn create_item_proxy(
         &self,
-        bus_name: &'a str,
+        bus_name: String,
         object_path: String,
-    ) -> zbus::Result<StatusNotifierItemProxy<'a>> {
+    ) -> zbus::Result<StatusNotifierItemProxy<'static>> {
+        // Используем Box::leak для создания 'static reference из owned String
+        // Это безопасно, так как bus_name будет храниться в TrayItem
+        let bus_name_static: &'static str = Box::leak(bus_name.into_boxed_str());
         StatusNotifierItemProxy::builder(&self.connection)
-            .destination(bus_name)?
+            .destination(bus_name_static)?
             .path(object_path)?
             .build()
             .await
     }
 
-    async fn fetch_item_data(item_proxy: &StatusNotifierItemProxy<'_>, bus_name: &str, object_path: String) -> zbus::Result<TrayItem> {
-        let id = item_proxy.id().await.unwrap_or_default();
-        let title = item_proxy.title().await.unwrap_or_default();
-        let status_str = item_proxy.status().await.unwrap_or_default();
-        let category = item_proxy.category().await.unwrap_or_default();
+    async fn fetch_item_data(item_proxy: &StatusNotifierItemProxy<'_>, bus_name: String, object_path: String) -> zbus::Result<TrayItem> {
+        // Читаем основные свойства с логированием ошибок
+        let id = item_proxy.id().await.unwrap_or_else(|e| {
+            logger::log_error("Tray::fetch_item_data::id", &e);
+            String::new()
+        });
+        let title = item_proxy.title().await.unwrap_or_else(|e| {
+            logger::log_error("Tray::fetch_item_data::title", &e);
+            String::new()
+        });
+        let status_str = item_proxy.status().await.unwrap_or_else(|e| {
+            logger::log_error("Tray::fetch_item_data::status", &e);
+            String::new()
+        });
+        let category = item_proxy.category().await.unwrap_or_else(|e| {
+            logger::log_error("Tray::fetch_item_data::category", &e);
+            String::new()
+        });
+        
         let icon_name = item_proxy.icon_name().await.ok();
         let attention_icon_name = item_proxy.attention_icon_name().await.ok();
         let overlay_icon_name = item_proxy.overlay_icon_name().await.ok();
+        
+        // Читаем pixmap свойства
+        let icon_pixmap_prop = item_proxy.icon_pixmap().await.ok();
+        let attention_icon_pixmap = item_proxy.attention_icon_pixmap().await.ok();
+        let overlay_icon_pixmap = item_proxy.overlay_icon_pixmap().await.ok();
+        
         let menu_path = item_proxy.menu().await.ok();
-        let is_menu = item_proxy.item_is_menu().await.unwrap_or(false);
-        let window_id = item_proxy.window_id().await.unwrap_or(0);
-        let tooltip = item_proxy.tool_tip().await.unwrap_or_else(|_| {
+        
+        // Вспомогательная функция для проверки, является ли ошибка отсутствием свойства
+        fn is_missing_property_error(e: &ZbusError) -> bool {
+            let err_str = e.to_string();
+            err_str.contains("No such property") 
+                || err_str.contains("UnknownProperty") 
+                || err_str.contains("InvalidArgs")
+                || err_str.contains("Property") && err_str.contains("was not found")
+        }
+        
+        // Опциональные свойства - не логируем ошибки отсутствующих свойств
+        let is_menu = item_proxy.item_is_menu().await.unwrap_or_else(|e| {
+            if !is_missing_property_error(&e) {
+                logger::log_error("Tray::fetch_item_data::item_is_menu", &e);
+            }
+            false
+        });
+        
+        let window_id = item_proxy.window_id().await.unwrap_or_else(|e| {
+            // Не логируем ошибки отсутствующих свойств или неправильного типа (некоторые приложения используют другой тип)
+            if !is_missing_property_error(&e) && !e.to_string().contains("incorrect type") {
+                logger::log_error("Tray::fetch_item_data::window_id", &e);
+            }
+            0
+        });
+        
+        let tooltip = item_proxy.tool_tip().await.unwrap_or_else(|e| {
+            if !is_missing_property_error(&e) {
+                logger::log_error("Tray::fetch_item_data::tool_tip", &e);
+            }
             ToolTip::new(String::new(), Vec::new(), String::new(), String::new())
         });
 
-        let icon_pixmap = if !tooltip.icon_pixmap().is_empty() {
-            tooltip.icon_pixmap().first().cloned()
+        // Приоритет: icon_pixmap property > tooltip.icon_pixmap
+        let icon_pixmap = if let Some(ref pixmaps) = icon_pixmap_prop {
+            if !pixmaps.is_empty() {
+                pixmaps.first().cloned()
+            } else {
+                None
+            }
         } else {
             None
-        };
+        }.or_else(|| {
+            if !tooltip.icon_pixmap().is_empty() {
+                tooltip.icon_pixmap().first().cloned()
+            } else {
+                None
+            }
+        });
 
+        // Получаем пути к иконкам с обработкой ошибок
         let icon_paths = if let Some(ref name) = icon_name {
-            icon_fetcher(name).unwrap_or_default()
+            icon_fetcher(name).unwrap_or_else(|e| {
+                logger::log_error("Tray::fetch_item_data::icon_fetcher", format!("icon_name={}: {}", name, e));
+                Vec::new()
+            })
         } else if !id.is_empty() {
-            icon_fetcher(&id).unwrap_or_default()
+            icon_fetcher(&id).unwrap_or_else(|e| {
+                logger::log_error("Tray::fetch_item_data::icon_fetcher", format!("id={}: {}", id, e));
+                Vec::new()
+            })
         } else if !title.is_empty() {
-            icon_fetcher(&title).unwrap_or_default()
+            icon_fetcher(&title).unwrap_or_else(|e| {
+                logger::log_error("Tray::fetch_item_data::icon_fetcher", format!("title={}: {}", title, e));
+                Vec::new()
+            })
         } else {
             Vec::new()
         };
 
+        // Используем attention_icon_pixmap если статус NeedsAttention
+        let final_pixmap = if status_str == "NeedsAttention" {
+            attention_icon_pixmap
+                .and_then(|pixmaps| pixmaps.first().cloned())
+                .or(icon_pixmap)
+        } else {
+            icon_pixmap
+        };
+        
+        // overlay_icon_pixmap можно использовать для отображения overlay иконки
+        // Пока оставляем как есть, можно добавить поддержку позже
+        let _ = overlay_icon_pixmap;
+
         let icon = TrayIcon {
             name: icon_name,
-            pixmap: icon_pixmap,
+            pixmap: final_pixmap,
             attention_name: attention_icon_name,
             overlay_name: overlay_icon_name,
             icon_paths,
