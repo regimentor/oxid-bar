@@ -10,11 +10,14 @@ pub fn log_error(context: &str, error: impl std::fmt::Display) {
 
 /// Логирует предупреждение с контекстом
 pub fn log_warning(context: &str, message: impl std::fmt::Display) {
-    tracing::warn!(context = %context, "{}", message);
+    tracing::warn!(context = %context, "[{}] {}", context, message);
 }
 
 /// Логирует информационное сообщение с контекстом
 pub fn log_info(context: &str, message: impl std::fmt::Display) {
-    tracing::info!(context = %context, "{}", message);
+    tracing::info!(context = %context, "[{}] {}", context, message);
 }
 
+pub fn log_debug(context: &str, message: impl std::fmt::Display) {
+    tracing::debug!(context = %context, "[{}] {}", context, message);
+}
