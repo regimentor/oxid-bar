@@ -13,6 +13,10 @@ modules/audio/
 ├── src/
 │   ├── lib.rs                    # Public module API
 │   ├── main.rs                   # Entry point for standalone application
+│   ├── ui/                       # UI module
+│   │   ├── mod.rs
+│   │   ├── widget.rs              # Audio widget in the bar
+│   │   └── popup.rs               # Volume control popup
 │   └── backend/
 │       ├── mod.rs                # Backend module
 │       └── pulse/                # PulseAudio backend
@@ -30,9 +34,10 @@ modules/audio/
 
 ```rust
 pub mod backend;
+pub mod ui;
 ```
 
-The module exports only the `backend` module, which contains the PulseAudio backend.
+The module exports the `backend` and `ui` modules.
 
 ### Start Listening
 
@@ -58,20 +63,6 @@ The application:
 3. Waits for termination signal (Ctrl+C)
 
 ## Backend: PulseAudio
-
-### Client
-
-Client for working with PulseAudio.
-
-```rust
-pub struct Client {
-    // ...
-}
-```
-
-**Methods:**
-- `new() -> Self` - creates a new client
-- `start_listening(&mut self) -> Result<()>` - starts listening to events
 
 ### OutputInfo
 
@@ -110,6 +101,21 @@ The module listens to the following PulseAudio events:
 - Device add/remove
 
 ## Usage
+
+### UI Integration (Bar)
+
+Use `audio::ui::build_ui` to attach the audio widget and popup to bar containers.
+
+```rust
+use audio::ui::build_ui as build_audio_ui;
+use gtk4::{Box, Orientation};
+
+let root = Box::new(Orientation::Horizontal, 0);
+let audio_icon_box = Box::new(Orientation::Horizontal, 0);
+root.append(&audio_icon_box);
+
+build_audio_ui(&audio_icon_box, &root)?;
+```
 
 ### Basic Usage (Library)
 
@@ -175,3 +181,45 @@ The module provides information about applications using audio, including their 
 ### Device Management
 
 The module can be extended for device management (volume change, mute/unmute, etc.).
+
+## UI Module
+
+The UI module builds the bar widget and the popup, and wires PulseAudio events to GTK widgets.
+
+### build_ui
+
+```rust
+pub fn build_ui(
+    icon_container: &gtk4::Box,
+    root: &gtk4::Box,
+) -> anyhow::Result<()>
+```
+
+`icon_container` hosts the widget icon, and `root` is used as a parent for the popup.
+
+### AudioEvent
+
+```rust
+pub enum AudioEvent {
+    GlobalVolumeChanged { sink_index: u32, volume: u32, muted: bool },
+    AppVolumeChanged { sink_input_index: u32, volume: u32, muted: bool, app_name: String },
+    AppsListUpdated { apps: Vec<OutputInfo> },
+    GlobalVolumeReceived { sink_index: u32, volume: u32, muted: bool },
+    AppVolumeReceived { sink_input_index: u32, volume: u32, muted: bool, app_name: String },
+}
+```
+
+### AudioCmd
+
+```rust
+pub enum AudioCmd {
+    AddOutput(OutputInfo),
+    ChangeOutput(u32, OutputInfo),
+    SetGlobalVolume { sink_index: u32, volume: u32 },
+    ToggleGlobalMute { sink_index: u32 },
+    SetAppVolume { sink_input_index: u32, volume: u32 },
+    ToggleAppMute { sink_input_index: u32 },
+    RequestGlobalVolume { sink_index: Option<u32> },
+    RequestAppsList,
+}
+```

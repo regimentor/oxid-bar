@@ -1,10 +1,11 @@
-use crate::backend::pulse::{client::Client, listen_pulse_backend::lesten_pulse_backend};
+use std::sync::mpsc;
+
+use crate::backend::pulse::client::{AudioCmd, AudioEvent};
+use crate::backend::pulse::listen_pulse_backend::lesten_pulse_backend;
 
 pub fn start_listening() -> anyhow::Result<()> {
-    let mut client = Client::new();
-    let cmd_tx = client.cmd_channels.tx.clone();
-    std::thread::spawn(move || lesten_pulse_backend(cmd_tx));
-    client.start_listening()?;
+    let (_cmd_tx, cmd_rx) = mpsc::channel::<AudioCmd>();
+    let (event_tx, _event_rx) = mpsc::channel::<AudioEvent>();
 
-    Ok(())
+    lesten_pulse_backend(cmd_rx, event_tx)
 }

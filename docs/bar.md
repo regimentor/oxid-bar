@@ -87,6 +87,10 @@ Displays current keyboard layout with country flag.
 
 Displays system tray icons (StatusNotifier).
 
+### Audio Widget
+
+The audio widget is provided by the `audio` module and built via `audio::ui::build_ui`.
+
 ## Services
 
 ### start_hyprland_event_listener
@@ -116,7 +120,20 @@ The application automatically:
 - `glib` - for timers and async operations
 - `hyprland` - for Hyprland API integration
 - `tray` - system tray module
+- `audio` - audio widget module
 - `hyprland_workspaces` - workspace management module
 - `time` - time handling module
 - `lang` - keyboard layout module
 - `logger` - logging module
+
+## Audio Integration
+
+`BarApp::build_ui` attaches the audio widget to the bar containers:
+
+```rust
+use audio::ui::build_ui as build_audio_ui;
+
+let audio_icon_box = Box::new(Orientation::Horizontal, 0);
+root.append(&audio_icon_box);
+build_audio_ui(&audio_icon_box, &root)?;
+```

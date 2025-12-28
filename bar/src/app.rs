@@ -1,12 +1,13 @@
+use audio::ui::build_ui as build_audio_ui;
+use glib::{ControlFlow, MainContext, timeout_add_local};
 use gtk4::{Application, ApplicationWindow, Box, Label, Orientation, prelude::*};
-use glib::{MainContext, timeout_add_local, ControlFlow};
-use std::{rc::Rc, cell::RefCell, sync::mpsc, time::Duration};
+use std::{cell::RefCell, rc::Rc, sync::mpsc, time::Duration};
 use tray::Tray;
 
 use crate::config::BarConfig;
-use crate::ui::{load_css, setup_window};
-use crate::ui::components::{WorkspacesComponent, TrayComponent, ClockComponent, LangComponent};
 use crate::services::start_hyprland_event_listener;
+use crate::ui::components::{ClockComponent, LangComponent, TrayComponent, WorkspacesComponent};
+use crate::ui::{load_css, setup_window};
 
 /// Основная логика приложения
 pub struct BarApp {
@@ -27,7 +28,7 @@ impl BarApp {
             .application(app)
             .title("OxidBar")
             .build();
-        
+
         setup_window(&window, &self.config);
 
         let root = Box::new(Orientation::Horizontal, self.config.spacing);
@@ -51,6 +52,13 @@ impl BarApp {
         // Tray
         let tray_box = Box::new(Orientation::Horizontal, 6);
         root.append(&tray_box);
+
+        // Audio
+        let audio_icon_box = Box::new(Orientation::Horizontal, 0);
+        root.append(&audio_icon_box);
+        if let Err(error) = build_audio_ui(&audio_icon_box, &root) {
+            logger::log_error("AudioWidgetInitialization", error);
+        }
 
         // Lang
         let lang_label = Label::new(None);
@@ -88,7 +96,13 @@ impl BarApp {
                         config_clone.clone(),
                         tray_rc.clone(),
                     );
-                    Self::start_tray_updater(tray_box_clone, root_clone, tray_rc, tray_component, config_clone);
+                    Self::start_tray_updater(
+                        tray_box_clone,
+                        root_clone,
+                        tray_rc,
+                        tray_component,
+                        config_clone,
+                    );
                 }
                 Err(e) => {
                     logger::log_error("TrayInitialization", e);
@@ -99,32 +113,41 @@ impl BarApp {
         // Workspaces таймер - проверка событий Hyprland
         let workspaces_clone = workspaces_component.clone();
         let config_workspaces = self.config.clone();
-        timeout_add_local(Duration::from_millis(config_workspaces.workspaces_check_interval_ms), move || {
-            let mut refreshed = false;
-            while rx.try_recv().is_ok() {
-                refreshed = true;
-            }
-            if refreshed {
-                workspaces_clone.borrow().refresh();
-            }
-            ControlFlow::Continue
-        });
+        timeout_add_local(
+            Duration::from_millis(config_workspaces.workspaces_check_interval_ms),
+            move || {
+                let mut refreshed = false;
+                while rx.try_recv().is_ok() {
+                    refreshed = true;
+                }
+                if refreshed {
+                    workspaces_clone.borrow().refresh();
+                }
+                ControlFlow::Continue
+            },
+        );
 
         // Lang таймер - обновление раскладки клавиатуры
         let lang_clone = lang_component.clone();
         let config_lang = self.config.clone();
-        timeout_add_local(Duration::from_millis(config_lang.lang_update_interval_ms), move || {
-            lang_clone.borrow().update();
-            ControlFlow::Continue
-        });
+        timeout_add_local(
+            Duration::from_millis(config_lang.lang_update_interval_ms),
+            move || {
+                lang_clone.borrow().update();
+                ControlFlow::Continue
+            },
+        );
 
         // Clock таймер - обновление времени
         let clock_clone = clock_component.clone();
         let config_clock = self.config.clone();
-        timeout_add_local(Duration::from_millis(config_clock.clock_update_interval_ms), move || {
-            clock_clone.borrow().update();
-            ControlFlow::Continue
-        });
+        timeout_add_local(
+            Duration::from_millis(config_clock.clock_update_interval_ms),
+            move || {
+                clock_clone.borrow().update();
+                ControlFlow::Continue
+            },
+        );
     }
 
     fn start_tray_updater(
@@ -137,23 +160,25 @@ impl BarApp {
         let tray_clone = tray.clone();
         let component = Rc::new(RefCell::new(tray_component));
         let component_clone = component.clone();
-        
-        timeout_add_local(Duration::from_secs(config.tray_update_interval_secs), move || {
-            let tray_ref = tray_clone.clone();
-            let component_ref = component_clone.clone();
-            
-            MainContext::default().spawn_local(async move {
-                let items = match tray_ref.borrow().get_items().await {
-                    Ok(items) => items,
-                    Err(e) => {
-                        logger::log_error("TrayUpdater", e);
-                        return;
-                    }
-                };
-                component_ref.borrow_mut().refresh(&items);
-            });
-            ControlFlow::Continue
-        });
+
+        timeout_add_local(
+            Duration::from_secs(config.tray_update_interval_secs),
+            move || {
+                let tray_ref = tray_clone.clone();
+                let component_ref = component_clone.clone();
+
+                MainContext::default().spawn_local(async move {
+                    let items = match tray_ref.borrow().get_items().await {
+                        Ok(items) => items,
+                        Err(e) => {
+                            logger::log_error("TrayUpdater", e);
+                            return;
+                        }
+                    };
+                    component_ref.borrow_mut().refresh(&items);
+                });
+                ControlFlow::Continue
+            },
+        );
     }
 }
-

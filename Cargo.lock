@@ -182,6 +182,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "ctrlc",
+ "glib 0.19.9",
+ "gtk4",
  "libpulse-binding",
  "logger",
 ]
@@ -197,6 +199,7 @@ name = "bar"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "audio",
  "gdk-pixbuf",
  "gio 0.20.12",
  "glib 0.19.9",

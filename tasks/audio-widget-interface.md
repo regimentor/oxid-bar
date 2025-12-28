@@ -1,143 +1,143 @@
 # План реализации интерфейса для PulseAudio виджета в баре
 
-## Обзор
+## Overview
 
-Реализация UI компонента для отображения и управления аудио (глобальная громкость, громкость по приложениям) в статус-баре OxidBar. UI элементы располагаются в модуле `audio`, вся логика работы с backend реализована в UI модуле.
+Implement a UI component for displaying and controlling audio (global volume and per-application volume) in the OxidBar status bar. UI elements live in the `audio` module, and all backend interaction logic is implemented inside the UI module.
 
-## Архитектура
+## Architecture
 
-- **UI модуль:** `modules/audio/src/ui/` - содержит все UI компоненты и логику работы с backend
-- **Backend модуль:** `modules/audio/src/backend/pulse/` - расширяется для поддержки событий и команд управления громкостью
-- **Интеграция:** Функция `build_ui` в модуле `audio` принимает контейнеры из бара и интегрирует виджет
+- **UI module:** `modules/audio/src/ui/` - hosts all UI components and the backend interaction logic
+- **Backend module:** `modules/audio/src/backend/pulse/` - extended to support volume events and control commands
+- **Integration:** `build_ui` in the `audio` module accepts bar containers and wires the widget
 
-## Цели
+## Goals
 
-1. Расширить `AudioEvent` для поддержки событий глобальной и приложенческой громкости
-2. Расширить `AudioCmd` для команд управления громкостью
-3. Создать UI модуль в `modules/audio/src/ui/` с функцией `build_ui`
-4. Реализовать иконку на баре и попап с управлением громкостью
-5. Реализовать логику работы с backend в UI модуле
-6. Интегрировать виджет в бар через вызов `build_ui`
+1. Extend `AudioEvent` to cover global and per-application volume events
+2. Extend `AudioCmd` with volume control commands
+3. Create the UI module in `modules/audio/src/ui/` with a `build_ui` entry point
+4. Implement a bar icon and a volume control popup
+5. Implement backend interaction logic inside the UI module
+6. Integrate the widget into the bar via `build_ui`
 
-## Задачи
+## Tasks
 
-### 1. Расширение AudioEvent для событий громкости
+### 1. Extend AudioEvent for volume events
 
-**Файл:** `modules/audio/src/backend/pulse/client.rs`
+**File:** `modules/audio/src/backend/pulse/client.rs`
 
-- [ ] Расширить `AudioEvent` следующими вариантами:
+- [ ] Extend `AudioEvent` with the following variants:
   ```rust
   pub enum AudioEvent {
-      // Глобальная громкость (sink)
+      // Global volume (sink)
       GlobalVolumeChanged {
           sink_index: u32,
           volume: u32,  // 0-100
           muted: bool,
       },
-      // Громкость приложения (sink input)
+      // Application volume (sink input)
       AppVolumeChanged {
           sink_input_index: u32,
           volume: u32,  // 0-100
           muted: bool,
           app_name: String,
       },
-      // Список приложений обновлен
+      // Applications list updated
       AppsListUpdated {
           apps: Vec<OutputInfo>,
       },
-      // Глобальная громкость получена (начальное состояние)
+      // Global volume received (initial state)
       GlobalVolumeReceived {
           sink_index: u32,
           volume: u32,
           muted: bool,
       },
-      // Громкость приложения получена (начальное состояние)
+      // Application volume received (initial state)
       AppVolumeReceived {
           sink_input_index: u32,
-          volume: u32,
+          volume: u32,  // 0-100
           muted: bool,
           app_name: String,
       },
   }
   ```
 
-**Ожидаемый результат:** `AudioEvent` поддерживает все необходимые события для UI
+**Expected result:** `AudioEvent` supports all required UI events
 
 ---
 
-### 2. Расширение AudioCmd для команд управления
+### 2. Extend AudioCmd with control commands
 
-**Файл:** `modules/audio/src/backend/pulse/client.rs`
+**File:** `modules/audio/src/backend/pulse/client.rs`
 
-- [ ] Расширить `AudioCmd` следующими вариантами:
+- [ ] Extend `AudioCmd` with the following variants:
   ```rust
   pub enum AudioCmd {
-      // Существующие команды
+      // Existing commands
       AddOutput(OutputInfo),
       ChangeOutput(u32, OutputInfo),
       
-      // Новые команды для управления
-      // Установить глобальную громкость
+      // New control commands
+      // Set global volume
       SetGlobalVolume {
           sink_index: u32,
           volume: u32,  // 0-100
       },
-      // Переключить mute глобальной громкости
+      // Toggle global mute
       ToggleGlobalMute {
           sink_index: u32,
       },
-      // Установить громкость приложения
+      // Set application volume
       SetAppVolume {
           sink_input_index: u32,
           volume: u32,  // 0-100
       },
-      // Переключить mute приложения
+      // Toggle application mute
       ToggleAppMute {
           sink_input_index: u32,
       },
-      // Запросить текущее состояние глобальной громкости
+      // Request current global volume
       RequestGlobalVolume {
           sink_index: Option<u32>,  // None = default sink
       },
-      // Запросить список приложений с их громкостью
+      // Request list of applications with their volume
       RequestAppsList,
   }
   ```
 
-**Ожидаемый результат:** `AudioCmd` поддерживает все команды для управления громкостью
+**Expected result:** `AudioCmd` supports all volume control commands
 
 ---
 
-### 3. Расширение backend для обработки команд и отправки событий
+### 3. Extend backend to handle commands and emit events
 
-**Файл:** `modules/audio/src/backend/pulse/listen_pulse_backend.rs`
+**File:** `modules/audio/src/backend/pulse/listen_pulse_backend.rs`
 
-- [ ] Модифицировать функцию `lesten_pulse_backend` для приема `event_tx: mpsc::Sender<AudioEvent>`
-- [ ] Добавить обработку подписки на события SINK (для глобальной громкости)
-- [ ] При получении информации о sink отправлять `AudioEvent::GlobalVolumeChanged`
-- [ ] При получении информации о sink input отправлять `AudioEvent::AppVolumeChanged`
-- [ ] При начальной загрузке отправлять `AudioEvent::GlobalVolumeReceived` и `AudioEvent::AppVolumeReceived`
+- [ ] Update `lesten_pulse_backend` to accept `event_tx: mpsc::Sender<AudioEvent>`
+- [ ] Add subscription handling for SINK events (global volume)
+- [ ] On sink info updates, send `AudioEvent::GlobalVolumeChanged`
+- [ ] On sink input info updates, send `AudioEvent::AppVolumeChanged`
+- [ ] On initial load, send `AudioEvent::GlobalVolumeReceived` and `AudioEvent::AppVolumeReceived`
 
-**Файл:** `modules/audio/src/backend/pulse/client.rs`
+**File:** `modules/audio/src/backend/pulse/client.rs`
 
-- [ ] Модифицировать `Client::start_listening` для обработки новых команд:
-  - `SetGlobalVolume` - установить громкость через PulseAudio API
-  - `ToggleGlobalMute` - переключить mute через PulseAudio API
-  - `SetAppVolume` - установить громкость приложения
-  - `ToggleAppMute` - переключить mute приложения
-  - `RequestGlobalVolume` - запросить текущую громкость и отправить событие
-  - `RequestAppsList` - запросить список приложений и отправить событие
+- [ ] Update `Client::start_listening` to handle new commands:
+  - `SetGlobalVolume` - set volume via the PulseAudio API
+  - `ToggleGlobalMute` - toggle mute via the PulseAudio API
+  - `SetAppVolume` - set application volume
+  - `ToggleAppMute` - toggle application mute
+  - `RequestGlobalVolume` - request current volume and send an event
+  - `RequestAppsList` - request the applications list and send an event
 
-**Ожидаемый результат:** Backend обрабатывает команды управления и отправляет события
+**Expected result:** Backend handles control commands and sends events
 
 ---
 
-### 4. Создание структуры UI модуля
+### 4. Create the UI module structure
 
-**Файл:** `modules/audio/src/ui/mod.rs`
+**File:** `modules/audio/src/ui/mod.rs`
 
-- [ ] Создать модуль `ui` в `modules/audio/src/lib.rs`: `pub mod ui;`
-- [ ] Создать файл `modules/audio/src/ui/mod.rs` с экспортом:
+- [ ] Add a `ui` module in `modules/audio/src/lib.rs`: `pub mod ui;`
+- [ ] Create `modules/audio/src/ui/mod.rs` exporting:
   ```rust
   pub mod widget;
   pub mod popup;
@@ -145,60 +145,60 @@
   pub use widget::build_ui;
   ```
 
-**Ожидаемый результат:** Структура UI модуля создана
+**Expected result:** UI module structure is created
 
 ---
 
-### 5. Создание виджета для бара (иконка)
+### 5. Create the bar widget (icon)
 
-**Файл:** `modules/audio/src/ui/widget.rs`
+**File:** `modules/audio/src/ui/widget.rs`
 
-**Структура:**
-- [ ] Создать структуру `AudioWidget` с полями:
-  - `icon_container: Box` - контейнер для иконки на баре
-  - `icon_label: Label` - label для отображения иконки/громкости
-  - `client: Rc<RefCell<Client>>` - клиент для работы с backend
-  - `current_global_volume: u32` - текущая глобальная громкость
-  - `is_global_muted: bool` - состояние mute
-  - `popup: Option<AudioPopup>` - ссылка на попап (опционально)
+**Structure:**
+- [ ] Create an `AudioWidget` struct with fields:
+  - `icon_container: Box` - icon container in the bar
+  - `icon_label: Label` - label displaying icon or volume
+  - `client: Rc<RefCell<Client>>` - backend client
+  - `current_global_volume: u32` - current global volume
+  - `is_global_muted: bool` - mute state
+  - `popup: Option<AudioPopup>` - popup reference (optional)
 
-**Методы:**
-- [ ] `new(icon_container: Box, client: Rc<RefCell<Client>>) -> Self` - создание виджета
-  - Создать `Label` для иконки
-  - Добавить CSS класс `audio-widget-icon`
-  - Добавить label в контейнер
-  - Инициализировать значения по умолчанию
-- [ ] `update_icon(&self)` - обновление иконки
-  - Отобразить иконку 🔊/🔇 в зависимости от mute
-  - Возможно добавить процент громкости
-- [ ] `handle_event(&mut self, event: AudioEvent)` - обработка событий
-  - Обработать `GlobalVolumeChanged` - обновить глобальную громкость
-  - Обработать `GlobalVolumeReceived` - установить начальное состояние
-  - Вызвать `update_icon()` после обновления
-- [ ] `start_event_listener(&self)` - запуск обработки событий
-  - В отдельном потоке или через таймер читать `client.event_channels.rx`
-  - Вызывать `handle_event` для каждого события
-  - Использовать `MainContext` для обновления UI из другого потока
+**Methods:**
+- [ ] `new(icon_container: Box, client: Rc<RefCell<Client>>) -> Self` - create widget
+  - Create a `Label` for the icon
+  - Add CSS class `audio-widget-icon`
+  - Add the label to the container
+  - Initialize default values
+- [ ] `update_icon(&self)` - update icon
+  - Display a speaker or muted icon based on mute state
+  - Optionally include volume percentage
+- [ ] `handle_event(&mut self, event: AudioEvent)` - handle events
+  - Handle `GlobalVolumeChanged` - update global volume
+  - Handle `GlobalVolumeReceived` - set initial state
+  - Call `update_icon()` after updates
+- [ ] `start_event_listener(&self)` - start event processing
+  - Read `client.event_channels.rx` in a separate thread or via a timer
+  - Call `handle_event` for each event
+  - Use `MainContext` to update UI from another thread
 
-**Ожидаемый результат:** Виджет отображает иконку на баре и обновляется при изменениях
+**Expected result:** Widget shows the bar icon and updates on changes
 
 ---
 
-### 6. Создание попапа для управления громкостью
+### 6. Create a popup for volume control
 
-**Файл:** `modules/audio/src/ui/popup.rs`
+**File:** `modules/audio/src/ui/popup.rs`
 
-**Структура:**
-- [ ] Создать структуру `AudioPopup` с полями:
-  - `popup_window: Popover` или `Box` - контейнер попапа
-  - `client: Rc<RefCell<Client>>` - клиент для работы с backend
-  - `global_volume_scale: Scale` - слайдер для глобальной громкости
-  - `global_mute_button: Button` - кнопка mute/unmute
-  - `apps_list: ListBox` или `Box` - список приложений с их громкостью
-  - `apps: Vec<AppControl>` - список контролов для приложений
+**Structure:**
+- [ ] Create an `AudioPopup` struct with fields:
+  - `popup_window: Popover` or `Box` - popup container
+  - `client: Rc<RefCell<Client>>` - backend client
+  - `global_volume_scale: Scale` - global volume slider
+  - `global_mute_button: Button` - mute or unmute button
+  - `apps_list: ListBox` or `Box` - list of applications with their volume
+  - `apps: Vec<AppControl>` - list of app controls
 
-**Структура AppControl:**
-- [ ] Создать структуру `AppControl` для управления громкостью приложения:
+**AppControl struct:**
+- [ ] Create an `AppControl` struct for per-app volume control:
   ```rust
   struct AppControl {
       app_name: String,
@@ -209,90 +209,90 @@
   }
   ```
 
-**Методы AudioPopup:**
-- [ ] `new(root: &Box, client: Rc<RefCell<Client>>) -> Self` - создание попапа
-  - Создать `Popover` или `Box` с CSS классом `audio-popup`
-  - Создать слайдер для глобальной громкости
-  - Создать кнопку mute/unmute
-  - Создать контейнер для списка приложений
-  - Настроить обработчики событий
-- [ ] `update_global_volume(&self, volume: u32, muted: bool)` - обновление глобальной громкости
-  - Установить значение слайдера
-  - Обновить состояние кнопки mute
-- [ ] `update_apps_list(&mut self, apps: Vec<OutputInfo>)` - обновление списка приложений
-  - Создать/обновить `AppControl` для каждого приложения
-  - Добавить слайдеры и кнопки для каждого приложения
-- [ ] `handle_event(&mut self, event: AudioEvent)` - обработка событий
-  - Обновить UI при получении событий
-- [ ] `on_global_volume_changed(&self, value: f64)` - обработчик изменения слайдера
-  - Отправить `AudioCmd::SetGlobalVolume`
-- [ ] `on_global_mute_clicked(&self)` - обработчик клика на mute
-  - Отправить `AudioCmd::ToggleGlobalMute`
-- [ ] `on_app_volume_changed(&self, sink_input_index: u32, value: f64)` - обработчик изменения громкости приложения
-  - Отправить `AudioCmd::SetAppVolume`
-- [ ] `on_app_mute_clicked(&self, sink_input_index: u32)` - обработчик клика на mute приложения
-  - Отправить `AudioCmd::ToggleAppMute`
+**AudioPopup methods:**
+- [ ] `new(root: &Box, client: Rc<RefCell<Client>>) -> Self` - create popup
+  - Create a `Popover` or `Box` with CSS class `audio-popup`
+  - Create the global volume slider
+  - Create the mute or unmute button
+  - Create a container for the applications list
+  - Set up event handlers
+- [ ] `update_global_volume(&self, volume: u32, muted: bool)` - update global volume
+  - Set the slider value
+  - Update the mute button state
+- [ ] `update_apps_list(&mut self, apps: Vec<OutputInfo>)` - update applications list
+  - Create or update an `AppControl` for each app
+  - Add sliders and buttons for each app
+- [ ] `handle_event(&mut self, event: AudioEvent)` - handle events
+  - Update UI when events arrive
+- [ ] `on_global_volume_changed(&self, value: f64)` - slider change handler
+  - Send `AudioCmd::SetGlobalVolume`
+- [ ] `on_global_mute_clicked(&self)` - mute button click handler
+  - Send `AudioCmd::ToggleGlobalMute`
+- [ ] `on_app_volume_changed(&self, sink_input_index: u32, value: f64)` - app volume change handler
+  - Send `AudioCmd::SetAppVolume`
+- [ ] `on_app_mute_clicked(&self, sink_input_index: u32)` - app mute click handler
+  - Send `AudioCmd::ToggleAppMute`
 
-**Ожидаемый результат:** Попап позволяет управлять глобальной громкостью и громкостью приложений
+**Expected result:** Popup allows controlling global volume and per-application volume
 
 ---
 
-### 7. Реализация функции build_ui
+### 7. Implement build_ui
 
-**Файл:** `modules/audio/src/ui/widget.rs`
+**File:** `modules/audio/src/ui/widget.rs`
 
-- [ ] Создать публичную функцию `build_ui`:
+- [ ] Create a public `build_ui` function:
   ```rust
   pub fn build_ui(
       icon_container: &gtk4::Box,
       root: &gtk4::Box,
   ) -> anyhow::Result<()>
   ```
-- [ ] В функции:
-  - Создать `Client::new()`
-  - Обернуть клиент в `Rc<RefCell<>>`
-  - Создать `AudioWidget` с иконкой
-  - Создать `AudioPopup` с попапом
-  - Связать виджет и попап (при клике на иконку показывать попап)
-  - Запустить PulseAudio listener в отдельном потоке
-  - Запустить обработку событий для виджета и попапа
-  - Запросить начальное состояние через `AudioCmd::RequestGlobalVolume` и `AudioCmd::RequestAppsList`
+- [ ] In the function:
+  - Create `Client::new()`
+  - Wrap the client in `Rc<RefCell<>>`
+  - Create `AudioWidget` with the icon
+  - Create `AudioPopup` with the popup
+  - Connect the widget and popup (show popup when the icon is clicked)
+  - Start the PulseAudio listener in a separate thread
+  - Start event handling for the widget and popup
+  - Request initial state via `AudioCmd::RequestGlobalVolume` and `AudioCmd::RequestAppsList`
 
-**Ожидаемый результат:** Функция `build_ui` интегрирует виджет в бар
-
----
-
-### 8. Добавление зависимостей в модуль audio
-
-**Файл:** `modules/audio/Cargo.toml`
-
-- [ ] Добавить зависимости:
-  - `gtk4 = "0.10.3"` - для UI компонентов
-  - `glib = "0.19"` - для работы с MainContext и таймерами
-
-**Ожидаемый результат:** Модуль audio имеет все необходимые зависимости для UI
+**Expected result:** `build_ui` integrates the widget into the bar
 
 ---
 
-### 9. Интеграция в бар
+### 8. Add dependencies to the audio module
 
-**Файл:** `bar/src/app.rs`
+**File:** `modules/audio/Cargo.toml`
 
-- [ ] Добавить импорт: `use audio::ui::build_ui;`
-- [ ] В методе `build_ui` после создания `root`:
-  - Создать контейнер для иконки аудио: `let audio_icon_box = Box::new(Orientation::Horizontal, 0);`
-  - Добавить контейнер в `root` в нужном месте (например, перед Clock)
-  - Вызвать `audio::ui::build_ui(&audio_icon_box, &root)?;`
+- [ ] Add dependencies:
+  - `gtk4 = "0.10.3"` - for UI components
+  - `glib = "0.19"` - for MainContext and timers
 
-**Ожидаемый результат:** Аудио виджет интегрирован в бар
+**Expected result:** The audio module has all required UI dependencies
 
 ---
 
-### 10. Добавление CSS стилей
+### 9. Integrate into the bar
 
-**Файл:** `bar/resources/styles.css`
+**File:** `bar/src/app.rs`
 
-- [ ] Добавить стили для `.audio-widget-icon`:
+- [ ] Add import: `use audio::ui::build_ui;`
+- [ ] In `build_ui` after creating `root`:
+  - Create an audio icon container: `let audio_icon_box = Box::new(Orientation::Horizontal, 0);`
+  - Add the container to `root` at the desired location (for example, before Clock)
+  - Call `audio::ui::build_ui(&audio_icon_box, &root)?;`
+
+**Expected result:** Audio widget is integrated into the bar
+
+---
+
+### 10. Add CSS styles
+
+**File:** `bar/resources/styles.css`
+
+- [ ] Add styles for `.audio-widget-icon`:
   ```css
   .audio-widget-icon {
       margin: 0 6px;
@@ -301,128 +301,123 @@
       cursor: pointer;
   }
   ```
-- [ ] Добавить стили для `.audio-popup`:
+- [ ] Add styles for `.audio-popup`:
   ```css
   .audio-popup {
       padding: 12px;
       min-width: 300px;
   }
   ```
-- [ ] Добавить стили для элементов управления в попапе
+- [ ] Add styles for popup controls
 
-**Ожидаемый результат:** Виджет и попап имеют стилизованный вид
-
----
-
-### 11. Обновление документации
-
-**Файл:** `docs/audio.md`
-
-- [ ] Добавить описание UI модуля
-- [ ] Описать функцию `build_ui` и её параметры
-- [ ] Описать структуру `AudioEvent` и `AudioCmd`
-- [ ] Добавить примеры использования
-
-**Файл:** `docs/bar.md`
-
-- [ ] Добавить описание интеграции аудио виджета
-- [ ] Упомянуть вызов `audio::ui::build_ui`
-
-**Ожидаемый результат:** Документация актуальна и описывает аудио виджет
+**Expected result:** Widget and popup have styling
 
 ---
 
-## Детали реализации
+### 11. Update documentation
 
-### Архитектура событий
+**File:** `docs/audio.md`
 
-**Двунаправленная связь:**
-- **UI → Backend:** Команды через `AudioCmd` (установка громкости, mute)
-- **Backend → UI:** События через `AudioEvent` (изменения громкости, обновления списка)
+- [ ] Add a UI module description
+- [ ] Describe `build_ui` and its parameters
+- [ ] Describe the `AudioEvent` and `AudioCmd` structures
+- [ ] Add usage examples
 
-### Структура данных
+**File:** `docs/bar.md`
 
-**Виджет на баре отображает:**
-- Иконку 🔊/🔇 в зависимости от состояния mute
-- Возможно процент громкости (опционально)
+- [ ] Add a description of audio widget integration
+- [ ] Mention calling `audio::ui::build_ui`
 
-**Попап отображает:**
-- Слайдер для глобальной громкости (0-100%)
-- Кнопку mute/unmute для глобальной громкости
-- Список приложений с:
-  - Именем приложения
-  - Слайдером громкости (0-100%)
-  - Кнопкой mute/unmute
-
-### Работа с PulseAudio API
-
-**Для получения громкости:**
-- Использовать `introspector.get_sink_info()` для глобальной громкости
-- Использовать `introspector.get_sink_input_info_list()` для списка приложений
-- Подписаться на события через `ctx.subscribe(InterestMaskSet::SINK | InterestMaskSet::SINK_INPUT)`
-
-**Для установки громкости:**
-- Использовать `introspector.set_sink_volume_by_index()` для глобальной громкости
-- Использовать `introspector.set_sink_input_volume_by_index()` для громкости приложения
-- Использовать `introspector.set_sink_mute_by_index()` и `introspector.set_sink_input_mute_by_index()` для mute
-
-### Обновление UI
-
-**Event-driven подход:**
-- Backend отправляет события через `event_channels.tx`
-- UI модуль читает события через `event_channels.rx`
-- Используется `MainContext::default().invoke()` для обновления UI из другого потока
-
-### Обработка ошибок
-
-- При ошибке подключения к PulseAudio - отображать "—" или скрывать компонент
-- Логировать ошибки через `logger::log_error()`
-- Graceful degradation - приложение должно продолжать работать даже если аудио недоступно
-- При ошибке установки громкости - логировать, но не паниковать
-
-### Тестирование
-
-- [ ] Проверить отображение иконки при изменении громкости
-- [ ] Проверить отображение при mute/unmute
-- [ ] Проверить открытие/закрытие попапа
-- [ ] Проверить изменение громкости через слайдеры
-- [ ] Проверить mute/unmute через кнопки
-- [ ] Проверить обновление списка приложений
-- [ ] Проверить поведение при отсутствии PulseAudio
-- [ ] Проверить обновление при переключении аудио устройств
+**Expected result:** Documentation is up to date and describes the audio widget
 
 ---
 
-## Порядок выполнения
+## Implementation Details
+
+### Event architecture
+
+**Bidirectional flow:**
+- **UI → Backend:** commands via `AudioCmd` (set volume, mute)
+- **Backend → UI:** events via `AudioEvent` (volume changes, list updates)
+
+### Data structure
+
+**The bar widget displays:**
+- A speaker or muted icon depending on mute state
+- Optional volume percentage
+
+**The popup displays:**
+- A global volume slider (0-100%)
+- A mute/unmute button for global volume
+- A list of applications with:
+  - Application name
+  - Volume slider (0-100%)
+  - Mute/unmute button
+
+### PulseAudio API usage
+
+**For getting volume:**
+- Use `introspector.get_sink_info()` for global volume
+- Use `introspector.get_sink_input_info_list()` for the applications list
+- Subscribe to events via `ctx.subscribe(InterestMaskSet::SINK | InterestMaskSet::SINK_INPUT)`
+
+**For setting volume:**
+- Use `introspector.set_sink_volume_by_index()` for global volume
+- Use `introspector.set_sink_input_volume_by_index()` for application volume
+- Use `introspector.set_sink_mute_by_index()` and `introspector.set_sink_input_mute_by_index()` for mute
+
+### UI updates
+
+**Event-driven approach:**
+- Backend sends events via `event_channels.tx`
+- The UI module reads events via `event_channels.rx`
+- Use `MainContext::default().invoke()` to update UI from another thread
+
+### Error handling
+
+- On PulseAudio connection errors, display "-" or hide the component
+- Log errors via `logger::log_error()`
+- Graceful degradation: the app should keep running even when audio is unavailable
+- On volume set errors, log but do not panic
+
+### Testing
+
+- [ ] Verify the icon updates on volume changes
+- [ ] Verify the icon updates on mute or unmute
+- [ ] Verify popup open and close behavior
+- [ ] Verify volume changes via sliders
+- [ ] Verify mute or unmute via buttons
+- [ ] Verify applications list updates
+- [ ] Verify behavior when PulseAudio is unavailable
+- [ ] Verify updates when switching audio devices
+
+## Execution Order
 
 1. **Backend:**
-   - Расширить `AudioEvent` и `AudioCmd`
-   - Модифицировать backend для обработки команд и отправки событий
-   - Добавить подписку на события SINK
+   - Extend `AudioEvent` and `AudioCmd`
+   - Update the backend to handle commands and emit events
+   - Add SINK event subscription
 
-2. **UI модуль:**
-   - Создать структуру модуля `modules/audio/src/ui/`
-   - Реализовать `AudioWidget` (иконка на баре)
-   - Реализовать `AudioPopup` (попап с управлением)
-   - Реализовать функцию `build_ui`
+2. **UI module:**
+   - Create the module structure in `modules/audio/src/ui/`
+   - Implement `AudioWidget` (bar icon)
+   - Implement `AudioPopup` (control popup)
+   - Implement `build_ui`
 
-3. **Интеграция:**
-   - Добавить зависимости в `modules/audio/Cargo.toml`
-   - Интегрировать в `bar/src/app.rs`
-   - Добавить CSS стили
+3. **Integration:**
+   - Add dependencies to `modules/audio/Cargo.toml`
+   - Integrate into `bar/src/app.rs`
+   - Add CSS styles
 
-4. **Тестирование и документация:**
-   - Протестировать все функции
-   - Обновить документацию
+4. **Testing and documentation:**
+   - Test all functions
+   - Update documentation
 
----
+## Notes
 
-## Примечания
-
-- Вся логика работы с backend находится в UI модуле (`modules/audio/src/ui/`)
-- UI модуль использует `Client` из backend для отправки команд и получения событий
-- Для обновления UI из потока PulseAudio используется `MainContext::default().invoke()`
-- Попап может быть реализован как `Popover` (прикреплен к иконке) или как отдельное окно
-- Рекомендуется использовать `Popover` для более нативного вида
-- Список приложений должен обновляться динамически при добавлении/удалении приложений
-
+- All backend interaction logic lives in the UI module (`modules/audio/src/ui/`)
+- The UI module uses `Client` from the backend to send commands and receive events
+- Use `MainContext::default().invoke()` to update UI from the PulseAudio thread
+- The popup can be implemented as a `Popover` (anchored to the icon) or a separate window
+- A `Popover` is recommended for a more native feel
+- The applications list should update dynamically when apps are added or removed

@@ -13,6 +13,7 @@ hyprland_workspaces = { path = "../modules/hyprland_workspaces" }
 lang = { path = "../modules/lang" }
 time-utils = { package = "time", path = "../modules/time" }
 tray = { path = "../modules/tray" }
+audio = { path = "../modules/audio" }
 logger = { path = "../modules/logger" }
 tokio = { version = "1.48.0", features = ["rt", "rt-multi-thread", "macros"] }
 glib = "0.19"
